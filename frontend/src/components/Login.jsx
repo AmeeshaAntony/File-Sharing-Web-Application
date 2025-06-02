@@ -8,6 +8,7 @@ import {
   Typography,
   Link,
   Box,
+  Grid,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -73,11 +74,18 @@ function Login() {
             >
               Login
             </Button>
-            <Box sx={{ textAlign: 'center' }}>
-              <Link component={RouterLink} to="/register" variant="body2">
-                Don't have an account? Sign up
-              </Link>
-            </Box>
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <Link component={RouterLink} to="/register" variant="body2">
+                  Don't have an account? Sign up
+                </Link>
+              </Grid>
+              <Grid item xs={6} sx={{ textAlign: 'right' }}>
+                <Link component={RouterLink} to="/forgot-password" variant="body2">
+                  Forgot Password?
+                </Link>
+              </Grid>
+            </Grid>
           </form>
         </Paper>
       </Box>

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -6,6 +6,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
 from datetime import timedelta, datetime
+from flask_mail import Mail, Message
+from itsdangerous import URLSafeTimedSerializer
+import secrets # Import secrets module
 
 app = Flask(__name__)
 CORS(app)
@@ -17,10 +20,22 @@ app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this in production
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['PROFILE_PHOTOS_FOLDER'] = 'profile_photos'
+app.config['SECRET_KEY'] = 'b7b6e0135582657a393275bc2d77dee6cb56462af64082da0eb68b09acd275dc' # Add a secret key for token generation
+
+# Email Configuration (UPDATE WITH YOUR EMAIL DETAILS)
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'ameesha468@gmail.com' # Replace with your email
+app.config['MAIL_PASSWORD'] = 'amlu opqj bawp cyfe' # Replace with your app password
+app.config['MAIL_DEFAULT_SENDER'] = 'ameesha468@gmail.com' # Replace with your email
+app.config['SECURITY_PASSWORD_SALT'] = '1167cb3d941a0f31d7586466e3774dd01ddd36e3dbc63343d7ba4239c0c406cc' # Replace with your generated secret
 
 # Initialize extensions
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
+mail = Mail(app)
+s = URLSafeTimedSerializer(app.config['SECURITY_PASSWORD_SALT'])
 
 # Create necessary directories
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -36,7 +51,24 @@ class User(db.Model):
     date_of_birth = db.Column(db.Date, nullable=False)
     phone_number = db.Column(db.String(20), nullable=False)
     profile_photo = db.Column(db.String(255))
+    reset_token = db.Column(db.String(128), unique=True, nullable=True)
+    reset_token_expiration = db.Column(db.DateTime, nullable=True)
     files = db.relationship('File', backref='owner', lazy=True)
+
+    # Method to get a reset token
+    def get_reset_token(self, expires_sec=1800): # Token expires in 30 minutes
+        self.reset_token = secrets.token_hex(16)
+        self.reset_token_expiration = datetime.utcnow() + timedelta(seconds=expires_sec)
+        db.session.commit()
+        return self.reset_token
+
+    # Method to verify a reset token
+    @staticmethod
+    def verify_reset_token(token):
+        user = User.query.filter_by(reset_token=token).first()
+        if user and user.reset_token_expiration > datetime.utcnow():
+            return user
+        return None
 
 class File(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -113,6 +145,60 @@ def login():
     
     return jsonify({'error': 'Invalid credentials'}), 401
 
+@app.route('/api/forgot-password', methods=['POST'])
+def forgot_password():
+    print("Endpoint hit")
+    email = request.json.get('email')
+    user = User.query.filter_by(email=email).first()
+    
+    if not user:
+        print("User not found")
+        return jsonify({'message': 'If your email address is in our database, you will receive a password recovery link at that email address.'}), 200
+
+    try:
+        print("User found, generating token...")
+        token = user.get_reset_token()
+        print(f"Generated token: {token}")
+
+        reset_link = f"http://localhost:3000/reset-password/{token}"
+        print(f"Reset link: {reset_link}")
+        
+        msg = Message('Password Reset Request', recipients=[user.email])
+        msg.body = f'To reset your password, visit the following link: {reset_link}\n\nIf you did not make this request, simply ignore this email.\n'
+        
+        print("Sending mail...")
+        mail.send(msg)
+        print("Mail sent successfully")
+
+        return jsonify({'message': 'If your email address is in our database, you will receive a password recovery link at that email address.'}), 200
+
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return jsonify({'message': 'If your email address is in our database, you will receive a password recovery link at that email address.'}), 200
+
+@app.route('/api/reset-password/<token>', methods=['GET', 'POST'])
+def reset_token(token):
+    user = User.verify_reset_token(token)
+    if not user:
+        return jsonify({'error': 'Invalid or expired token'}), 400
+
+    if request.method == 'POST':
+        data = request.get_json()
+        password = data.get('password')
+        
+        if not password:
+             return jsonify({'error': 'Password is required'}), 400
+
+        user.password_hash = generate_password_hash(password)
+        user.reset_token = None
+        user.reset_token_expiration = None
+        db.session.commit()
+
+        return jsonify({'message': 'Password has been reset!'}), 200
+    else:
+        # For GET request, frontend can use this to check token validity
+        return jsonify({'message': 'Valid token'}), 200
+
 @app.route('/api/upload', methods=['POST'])
 @jwt_required()
 def upload_file():
@@ -182,13 +268,22 @@ def share_file():
     
     shared_user = User.query.filter_by(email=data['email']).first()
     if not shared_user:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': 'Recipient user not found'}), 404
+
+    # Check if already shared
+    already_shared = SharedFile.query.filter_by(file_id=file.id, shared_with_id=shared_user.id).first()
+    if already_shared:
+        return jsonify({'message': 'File already shared with this user'}), 200
+
+    shared_file = SharedFile(
+        file_id=file.id,
+        shared_with_id=shared_user.id
+    )
     
-    shared_file = SharedFile(file_id=file.id, shared_with_id=shared_user.id)
     db.session.add(shared_file)
     db.session.commit()
     
-    return jsonify({'message': 'File shared successfully'}), 200
+    return jsonify({'message': f'File shared successfully with {shared_user.email}'}), 200
 
 if __name__ == '__main__':
     with app.app_context():

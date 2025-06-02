@@ -14,8 +14,10 @@ function Navbar() {
   const location = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
 
-  // Don't show navbar on login and register pages
-  if (location.pathname === '/login' || location.pathname === '/register') {
+  // Don't show navbar on login, register, and reset password pages
+  if (location.pathname === '/login' || 
+      location.pathname === '/register' || 
+      location.pathname.startsWith('/reset-password/')) {
     return null;
   }
 
