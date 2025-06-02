@@ -13,10 +13,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      // Set up axios default headers
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // You might want to verify the token with your backend here
       setIsAuthenticated(true);
-      // You could also fetch user data here if needed
+      // You might want to fetch user data here
     }
     setLoading(false);
   }, []);
@@ -29,7 +29,6 @@ export const AuthProvider = ({ children }) => {
       });
       const { access_token, user } = response.data;
       localStorage.setItem('token', access_token);
-      // Set up axios default headers
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
       setUser(user);
       setIsAuthenticated(true);
@@ -42,7 +41,7 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (formData) => {
     try {
-      await axios.post('http://localhost:5000/api/register', formData, {
+      const response = await axios.post('http://localhost:5000/api/register', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -56,10 +55,9 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('token');
-    // Remove axios default headers
     delete axios.defaults.headers.common['Authorization'];
-    setIsAuthenticated(false);
     setUser(null);
+    setIsAuthenticated(false);
   };
 
   const value = {
@@ -72,4 +70,6 @@ export const AuthProvider = ({ children }) => {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}; 
+};
+
+export default AuthContext; 
