@@ -32,7 +32,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 const MAX_TOTAL_STORAGE = 1 * 1024 * 1024 * 1024; // 1 GB
@@ -51,28 +51,41 @@ function MyFiles() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
-  const filesPerPage = 10;
-  const { user, logout, isAuthenticated, accessToken } = useAuth();
+  const filesPerPage = 6;
+  const { user, logout, isAuthenticated, accessToken, loading } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    fetchFiles();
-  }, [currentPage, searchTerm]);
+    if (!loading && isAuthenticated) {
+      console.log("Access Token for fetch:", accessToken);
+      fetchFiles();
+    }
+  }, [currentPage, searchTerm, loading, isAuthenticated]);
 
   const fetchFiles = async () => {
     try {
+      if (!accessToken) {
+        console.warn("Cannot fetch files: Access token is not available.");
+        return;
+      }
       const response = await axios.get('http://localhost:5000/api/files', {
         params: {
           page: currentPage,
           per_page: filesPerPage,
           search: searchTerm,
         },
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
       });
-      // Sort files by upload_date in descending order (latest first)
       const sortedFiles = response.data.files.sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date));
       setFiles(sortedFiles);
       setTotalPages(Math.ceil(response.data.total_files / filesPerPage));
     } catch (error) {
       console.error('Error fetching files:', error);
+      if (error.response && error.response.status === 401) {
+        logout();
+      }
     }
   };
 
@@ -111,7 +124,15 @@ function MyFiles() {
   };
 
   const handleUpload = async () => {
-    if (selectedFiles.length === 0) return;
+    if (selectedFiles.length === 0) {
+      setUploadError('Please select files to upload.');
+      return;
+    }
+    if (!isAuthenticated) {
+      setUploadError('You must be logged in to upload files.');
+      logout();
+      return;
+    }
 
     const formData = new FormData();
     selectedFiles.forEach((file) => {
@@ -119,7 +140,7 @@ function MyFiles() {
     });
 
     try {
-      console.log("Access Token for upload:", accessToken); // Debugging line
+      console.log("Access Token for upload:", accessToken);
       await axios.post('http://localhost:5000/api/upload', formData, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -146,10 +167,17 @@ function MyFiles() {
   const handleConfirmDelete = async () => {
     if (fileToDeleteId) {
       try {
-        await axios.delete(`http://localhost:5000/api/files/${fileToDeleteId}`);
+        await axios.delete(`http://localhost:5000/api/files/${fileToDeleteId}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
         fetchFiles();
       } catch (error) {
         console.error('Error deleting file:', error);
+        if (error.response && error.response.status === 401) {
+          logout();
+        }
       }
     }
     setDeleteConfirmOpen(false);
@@ -163,8 +191,16 @@ function MyFiles() {
 
   const handleDownload = async (fileId, filename) => {
     try {
+      if (!accessToken) {
+        console.warn("Cannot download file: Access token is not available.");
+        logout();
+        return;
+      }
       const response = await axios.get(`http://localhost:5000/api/files/${fileId}/download`, {
         responseType: 'blob',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -175,22 +211,14 @@ function MyFiles() {
       link.remove();
     } catch (error) {
       console.error('Error downloading file:', error);
+      if (error.response && error.response.status === 401) {
+        logout();
+      }
     }
   };
 
-  const handleShare = async () => {
-    if (!selectedFileToShare || !shareEmail) return;
-
-    try {
-      await axios.post(`http://localhost:5000/api/files/${selectedFileToShare.id}/share`, {
-        email: shareEmail,
-      });
-      setShareDialogOpen(false);
-      setSelectedFileToShare(null);
-      setShareEmail('');
-    } catch (error) {
-      console.error('Error sharing file:', error);
-    }
+  const handleShare = (file) => {
+    navigate(`/share/${file.id}`);
   };
 
   const handlePageChange = (event, value) => {
@@ -208,6 +236,14 @@ function MyFiles() {
   const handleSearchChange = (event) => {
     debouncedSearch(event.target.value);
   };
+
+  if (loading) {
+    return <Typography>Loading files...</Typography>;
+  }
+
+  if (!isAuthenticated) {
+    return <Typography>Please log in to view your files.</Typography>;
+  }
 
   return (
     <Container maxWidth="lg">
@@ -265,10 +301,7 @@ function MyFiles() {
                       <DownloadIcon />
                     </IconButton>
                     <IconButton
-                      onClick={() => {
-                        setSelectedFileToShare(file);
-                        setShareDialogOpen(true);
-                      }}
+                      onClick={() => handleShare(file)}
                       color="primary"
                     >
                       <ShareIcon />
@@ -295,7 +328,6 @@ function MyFiles() {
           />
         </Box>
 
-        {/* Upload Dialog */}
         <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)}>
           <DialogTitle>Upload File</DialogTitle>
           <DialogContent dividers>
@@ -370,7 +402,6 @@ function MyFiles() {
           </DialogActions>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
         <Dialog
           open={deleteConfirmOpen}
           onClose={handleCloseDeleteConfirm}
@@ -393,7 +424,6 @@ function MyFiles() {
           </DialogActions>
         </Dialog>
 
-        {/* Share Dialog */}
         <Dialog open={shareDialogOpen} onClose={() => setShareDialogOpen(false)}>
           <DialogTitle>Share File</DialogTitle>
           <DialogContent>

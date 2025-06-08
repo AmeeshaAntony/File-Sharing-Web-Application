@@ -86,6 +86,17 @@ class SharedFile(db.Model):
     shared_with_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     shared_date = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp())
 
+class PublicShare(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    file_id = db.Column(db.Integer, db.ForeignKey('file.id'), nullable=False)
+    share_token = db.Column(db.String(64), unique=True, nullable=False)
+    recipient_email = db.Column(db.String(120), nullable=False)
+    message = db.Column(db.Text)
+    expiration_time = db.Column(db.Integer, nullable=False)  # in hours
+    created_at = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp())
+    expires_at = db.Column(db.DateTime, nullable=False)
+    file = db.relationship('File', backref='public_shares')
+
 # Routes
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -299,6 +310,22 @@ def download_file(file_id):
 
     return send_from_directory(app.config['UPLOAD_FOLDER'], file.filename, as_attachment=True, download_name=file.original_filename)
 
+@app.route('/api/files/<int:file_id>', methods=['GET'])
+@jwt_required()
+def get_file_details(file_id):
+    user_id = get_jwt_identity()
+    file = File.query.filter_by(id=file_id, user_id=user_id).first()
+    
+    if not file:
+        return jsonify({'error': 'File not found'}), 404
+    
+    return jsonify({
+        'id': file.id,
+        'filename': file.original_filename,
+        'size': file.file_size,
+        'upload_date': file.upload_date.isoformat()
+    }), 200
+
 @app.route('/api/share', methods=['POST'])
 @jwt_required()
 def share_file():
@@ -308,25 +335,82 @@ def share_file():
     file = File.query.filter_by(id=data['file_id'], user_id=user_id).first()
     if not file:
         return jsonify({'error': 'File not found'}), 404
+
+    # Check if file already has a public share
+    existing_share = PublicShare.query.filter_by(file_id=file.id).first()
+    if existing_share:
+        return jsonify({'error': 'This file already has a public share link'}), 400
+
+    # Generate a unique share token
+    share_token = secrets.token_urlsafe(32)
     
-    shared_user = User.query.filter_by(email=data['email']).first()
-    if not shared_user:
-        return jsonify({'error': 'Recipient user not found'}), 404
+    # Calculate expiration time
+    expiration_hours = int(data.get('expiration_time', 24))
+    expires_at = datetime.utcnow() + timedelta(hours=expiration_hours)
 
-    # Check if already shared
-    already_shared = SharedFile.query.filter_by(file_id=file.id, shared_with_id=shared_user.id).first()
-    if already_shared:
-        return jsonify({'message': 'File already shared with this user'}), 200
-
-    shared_file = SharedFile(
+    # Create new public share
+    public_share = PublicShare(
         file_id=file.id,
-        shared_with_id=shared_user.id
+        share_token=share_token,
+        recipient_email=data['email'],
+        message=data.get('message', ''),
+        expiration_time=expiration_hours,
+        expires_at=expires_at
     )
     
-    db.session.add(shared_file)
+    db.session.add(public_share)
     db.session.commit()
+
+    # Generate share link
+    share_link = f"http://localhost:3000/shared/{share_token}"
     
-    return jsonify({'message': f'File shared successfully with {shared_user.email}'}), 200
+    # Send email with share link
+    try:
+        msg = Message(
+            'File Shared With You',
+            recipients=[data['email']]
+        )
+        msg.body = f"""
+        A file has been shared with you.
+
+        File: {file.original_filename}
+        Message: {data.get('message', '')}
+        
+        You can access the file using this link: {share_link}
+        
+        This link will expire in {expiration_hours} hours.
+        """
+        mail.send(msg)
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        # Don't return error to user, just log it
+        # The share was still created successfully
+    
+    return jsonify({
+        'message': 'File shared successfully',
+        'share_link': share_link
+    }), 200
+
+@app.route('/api/shared/<token>', methods=['GET'])
+def get_shared_file(token):
+    share = PublicShare.query.filter_by(share_token=token).first()
+    
+    if not share:
+        return jsonify({'error': 'Share link not found'}), 404
+    
+    if share.expires_at < datetime.utcnow():
+        return jsonify({'error': 'Share link has expired'}), 410
+    
+    file = File.query.get(share.file_id)
+    if not file:
+        return jsonify({'error': 'File not found'}), 404
+    
+    return jsonify({
+        'filename': file.original_filename,
+        'size': file.file_size,
+        'message': share.message,
+        'expires_at': share.expires_at.isoformat()
+    }), 200
 
 if __name__ == '__main__':
     with app.app_context():
