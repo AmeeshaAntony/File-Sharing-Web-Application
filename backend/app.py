@@ -405,12 +405,26 @@ def get_shared_file(token):
     if not file:
         return jsonify({'error': 'File not found'}), 404
     
-    return jsonify({
-        'filename': file.original_filename,
-        'size': file.file_size,
-        'message': share.message,
-        'expires_at': share.expires_at.isoformat()
-    }), 200
+    # Check if the request wants JSON details or the actual file
+    if request.headers.get('Accept') == 'application/json':
+        return jsonify({
+            'filename': file.original_filename,
+            'size': file.file_size,
+            'message': share.message,
+            'expires_at': share.expires_at.isoformat()
+        }), 200
+    
+    # If not requesting JSON, serve the file for download
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found on server'}), 404
+
+    return send_from_directory(
+        app.config['UPLOAD_FOLDER'],
+        file.filename,
+        as_attachment=True,
+        download_name=file.original_filename
+    )
 
 if __name__ == '__main__':
     with app.app_context():
