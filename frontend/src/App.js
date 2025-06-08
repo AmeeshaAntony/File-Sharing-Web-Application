@@ -9,6 +9,7 @@ import Dashboard from './components/Dashboard';
 import Navbar from './components/Navbar';
 import ForgotPassword from './components/ForgotPassword';
 import ResetPassword from './components/ResetPassword';
+import MyFiles from './components/MyFiles';
 
 const theme = createTheme({
   palette: {
@@ -42,6 +43,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <Dashboard />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/my-files"
+              element={
+                <PrivateRoute>
+                  <MyFiles />
                 </PrivateRoute>
               }
             />
