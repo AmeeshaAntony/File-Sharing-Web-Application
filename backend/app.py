@@ -338,17 +338,42 @@ def share_file():
 
     # Check if file already has a public share
     existing_share = PublicShare.query.filter_by(file_id=file.id).first()
-    if existing_share:
-        return jsonify({'error': 'This file already has a public share link'}), 400
-
-    # Generate a unique share token
-    share_token = secrets.token_urlsafe(32)
     
-    # Calculate expiration time
+    if existing_share:
+        # If share exists, use the existing share link
+        share_link = f"http://localhost:3000/shared/{existing_share.share_token}"
+        
+        # Send email with existing share link
+        try:
+            msg = Message(
+                'File Shared With You',
+                recipients=[data['email']]
+            )
+            msg.body = f"""
+            A file has been shared with you.
+
+            File: {file.original_filename}
+            Message: {data.get('message', '')}
+            
+            You can access the file using this link: {share_link}
+            
+            This link will expire in {existing_share.expiration_time} hours.
+            """
+            mail.send(msg)
+        except Exception as e:
+            print(f"Error sending email: {e}")
+            # Don't return error to user, just log it
+        
+        return jsonify({
+            'message': 'File shared successfully with new recipient',
+            'share_link': share_link
+        }), 200
+
+    # If no existing share, create a new one
+    share_token = secrets.token_urlsafe(32)
     expiration_hours = int(data.get('expiration_time', 24))
     expires_at = datetime.utcnow() + timedelta(hours=expiration_hours)
 
-    # Create new public share
     public_share = PublicShare(
         file_id=file.id,
         share_token=share_token,
@@ -361,10 +386,9 @@ def share_file():
     db.session.add(public_share)
     db.session.commit()
 
-    # Generate share link
     share_link = f"http://localhost:3000/shared/{share_token}"
     
-    # Send email with share link
+    # Send email with new share link
     try:
         msg = Message(
             'File Shared With You',
@@ -384,7 +408,6 @@ def share_file():
     except Exception as e:
         print(f"Error sending email: {e}")
         # Don't return error to user, just log it
-        # The share was still created successfully
     
     return jsonify({
         'message': 'File shared successfully',
