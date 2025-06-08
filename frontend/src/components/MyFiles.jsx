@@ -19,6 +19,7 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
+  Pagination,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -31,6 +32,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { Link as RouterLink } from 'react-router-dom';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 const MAX_TOTAL_STORAGE = 1 * 1024 * 1024 * 1024; // 1 GB
@@ -44,16 +46,31 @@ function MyFiles() {
   const [shareEmail, setShareEmail] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const { user } = useAuth();
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [fileToDeleteId, setFileToDeleteId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const filesPerPage = 10;
+  const { user, logout, isAuthenticated, accessToken } = useAuth();
 
   useEffect(() => {
     fetchFiles();
-  }, []);
+  }, [currentPage, searchTerm]);
 
   const fetchFiles = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/files');
-      setFiles(response.data);
+      const response = await axios.get('http://localhost:5000/api/files', {
+        params: {
+          page: currentPage,
+          per_page: filesPerPage,
+          search: searchTerm,
+        },
+      });
+      // Sort files by upload_date in descending order (latest first)
+      const sortedFiles = response.data.files.sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date));
+      setFiles(sortedFiles);
+      setTotalPages(Math.ceil(response.data.total_files / filesPerPage));
     } catch (error) {
       console.error('Error fetching files:', error);
     }
@@ -62,13 +79,12 @@ function MyFiles() {
   const handleFilesAdded = useCallback((newFiles) => {
     const validFiles = Array.from(newFiles).filter(file => {
       if (file.size > MAX_FILE_SIZE) {
-        setUploadError(`File ${file.name} exceeds the 100 MB limit.`);
+        setUploadError('File size limit is 100mb');
         return false;
       }
       return true;
     });
     setSelectedFiles(prevFiles => [...prevFiles, ...validFiles]);
-    setUploadError('');
   }, []);
 
   const handleFileSelect = (event) => {
@@ -103,9 +119,10 @@ function MyFiles() {
     });
 
     try {
+      console.log("Access Token for upload:", accessToken); // Debugging line
       await axios.post('http://localhost:5000/api/upload', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${accessToken}`,
         },
       });
       setUploadDialogOpen(false);
@@ -115,16 +132,33 @@ function MyFiles() {
     } catch (error) {
       console.error('Error uploading file:', error);
       setUploadError('Error uploading files.');
+      if (error.response && error.response.status === 401) {
+        logout();
+      }
     }
   };
 
-  const handleDelete = async (fileId) => {
-    try {
-      await axios.delete(`http://localhost:5000/api/files/${fileId}`);
-      fetchFiles();
-    } catch (error) {
-      console.error('Error deleting file:', error);
+  const confirmDelete = (fileId) => {
+    setFileToDeleteId(fileId);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (fileToDeleteId) {
+      try {
+        await axios.delete(`http://localhost:5000/api/files/${fileToDeleteId}`);
+        fetchFiles();
+      } catch (error) {
+        console.error('Error deleting file:', error);
+      }
     }
+    setDeleteConfirmOpen(false);
+    setFileToDeleteId(null);
+  };
+
+  const handleCloseDeleteConfirm = () => {
+    setDeleteConfirmOpen(false);
+    setFileToDeleteId(null);
   };
 
   const handleDownload = async (fileId, filename) => {
@@ -159,20 +193,52 @@ function MyFiles() {
     }
   };
 
+  const handlePageChange = (event, value) => {
+    setCurrentPage(value);
+  };
+
+  const debouncedSearch = useCallback(
+    debounce((value) => {
+      setSearchTerm(value);
+      setCurrentPage(1);
+    }, 500),
+    []
+  );
+
+  const handleSearchChange = (event) => {
+    debouncedSearch(event.target.value);
+  };
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ mt: 4, mb: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom>
           Welcome, {user?.first_name}!
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<UploadIcon />}
-          onClick={() => setUploadDialogOpen(true)}
-          sx={{ mb: 4 }}
-        >
-          Upload File
-        </Button>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="contained"
+              startIcon={<UploadIcon />}
+              onClick={() => setUploadDialogOpen(true)}
+            >
+              Upload File
+            </Button>
+            <Button
+              variant="outlined"
+              component={RouterLink}
+              to="/"
+            >
+              Home Page
+            </Button>
+          </Box>
+          <TextField
+            label="Search files"
+            variant="outlined"
+            size="small"
+            onChange={handleSearchChange}
+          />
+        </Box>
 
         <Grid container spacing={3}>
           {files.length === 0 ? (
@@ -208,7 +274,7 @@ function MyFiles() {
                       <ShareIcon />
                     </IconButton>
                     <IconButton
-                      onClick={() => handleDelete(file.id)}
+                      onClick={() => confirmDelete(file.id)}
                       color="error"
                     >
                       <DeleteIcon />
@@ -219,6 +285,15 @@ function MyFiles() {
             ))
           )}
         </Grid>
+
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+          <Pagination
+            count={totalPages}
+            page={currentPage}
+            onChange={handlePageChange}
+            color="primary"
+          />
+        </Box>
 
         {/* Upload Dialog */}
         <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)}>
@@ -295,6 +370,29 @@ function MyFiles() {
           </DialogActions>
         </Dialog>
 
+        {/* Delete Confirmation Dialog */}
+        <Dialog
+          open={deleteConfirmOpen}
+          onClose={handleCloseDeleteConfirm}
+          aria-labelledby="alert-dialog-title"
+          aria-describedby="alert-dialog-description"
+        >
+          <DialogTitle id="alert-dialog-title">
+            {"Confirm Deletion"}
+          </DialogTitle>
+          <DialogContent>
+            <Typography id="alert-dialog-description">
+              Are you sure you want to delete this file?
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDeleteConfirm}>No</Button>
+            <Button onClick={handleConfirmDelete} autoFocus>
+              Yes
+            </Button>
+          </DialogActions>
+        </Dialog>
+
         {/* Share Dialog */}
         <Dialog open={shareDialogOpen} onClose={() => setShareDialogOpen(false)}>
           <DialogTitle>Share File</DialogTitle>
@@ -321,4 +419,13 @@ function MyFiles() {
   );
 }
 
-export default MyFiles; 
+export default MyFiles;
+
+const debounce = (func, delay) => {
+  let timeout;
+  return function(...args) {
+    const context = this;
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(context, args), delay);
+  };
+}; 

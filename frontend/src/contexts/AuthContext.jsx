@@ -9,11 +9,13 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [accessToken, setAccessToken] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      setAccessToken(token);
       // You might want to verify the token with your backend here
       setIsAuthenticated(true);
       // You might want to fetch user data here
@@ -32,6 +34,7 @@ export const AuthProvider = ({ children }) => {
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
       setUser(user);
       setIsAuthenticated(true);
+      setAccessToken(access_token);
       return true;
     } catch (error) {
       console.error('Login error:', error);
@@ -58,6 +61,7 @@ export const AuthProvider = ({ children }) => {
     delete axios.defaults.headers.common['Authorization'];
     setUser(null);
     setIsAuthenticated(false);
+    setAccessToken(null);
   };
 
   const value = {
@@ -67,6 +71,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    accessToken,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

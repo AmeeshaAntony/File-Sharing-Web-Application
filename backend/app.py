@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, url_for
+from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -202,44 +202,71 @@ def reset_token(token):
 @app.route('/api/upload', methods=['POST'])
 @jwt_required()
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+    try:
+        print("Incoming request files:", request.files)
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+
+        uploaded_files = request.files.getlist('file')
+        if not uploaded_files or all(f.filename == '' for f in uploaded_files):
+            return jsonify({'error': 'No selected file'}), 400
+
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+        for file in uploaded_files:
+            if file.filename == '':
+                continue
+
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+
+            user_id = get_jwt_identity()
+            new_file = File(
+                filename=filename,
+                original_filename=file.filename,
+                file_path=file_path,
+                file_size=os.path.getsize(file_path),
+                user_id=user_id
+            )
+
+            db.session.add(new_file)
+            db.session.commit()
+
+        return jsonify({'message': 'Files uploaded successfully'}), 201
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    if file:
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-        
-        user_id = get_jwt_identity()
-        new_file = File(
-            filename=filename,
-            original_filename=filename,
-            file_path=file_path,
-            file_size=os.path.getsize(file_path),
-            user_id=user_id
-        )
-        
-        db.session.add(new_file)
-        db.session.commit()
-        
-        return jsonify({'message': 'File uploaded successfully'}), 201
+    except Exception as e:
+        print("Upload error:", str(e))
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/files', methods=['GET'])
 @jwt_required()
 def get_files():
     user_id = get_jwt_identity()
-    files = File.query.filter_by(user_id=user_id).all()
     
-    return jsonify([{
-        'id': file.id,
-        'filename': file.original_filename,
-        'size': file.file_size,
-        'upload_date': file.upload_date.isoformat()
-    } for file in files]), 200
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    search_term = request.args.get('search', type=str)
+
+    query = File.query.filter_by(user_id=user_id)
+
+    if search_term:
+        query = query.filter(File.original_filename.ilike(f'%{search_term}%'))
+
+    total_files = query.count()
+    files = query.offset((page - 1) * per_page).limit(per_page).all()
+    
+    return jsonify({
+        'files': [{
+            'id': file.id,
+            'filename': file.original_filename,
+            'size': file.file_size,
+            'upload_date': file.upload_date.isoformat()
+        } for file in files],
+        'total_files': total_files,
+        'per_page': per_page,
+        'current_page': page
+    }), 200
 
 @app.route('/api/files/<int:file_id>', methods=['DELETE'])
 @jwt_required()
@@ -255,6 +282,22 @@ def delete_file(file_id):
     db.session.commit()
     
     return jsonify({'message': 'File deleted successfully'}), 200
+
+@app.route('/api/files/<int:file_id>/download', methods=['GET'])
+@jwt_required()
+def download_file(file_id):
+    user_id = get_jwt_identity()
+    file = File.query.filter_by(id=file_id, user_id=user_id).first()
+
+    if not file:
+        return jsonify({'error': 'File not found or unauthorized'}), 404
+
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found on server'}), 404
+
+    return send_from_directory(app.config['UPLOAD_FOLDER'], file.filename, as_attachment=True, download_name=file.original_filename)
 
 @app.route('/api/share', methods=['POST'])
 @jwt_required()
