@@ -64,11 +64,11 @@ function Dashboard() {
             },
           }}
         >
-          Get Dropbox Basic
+          Shared Files
         </Button>
       </Box>
       <Typography variant="body2" sx={{ color: '#777' }}>
-        Try Dropbox Business free for 30 days. No credit card needed.
+
       </Typography>
     </Box>
   );

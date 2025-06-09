@@ -40,23 +40,10 @@ function Navbar() {
         ) : (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Button color="inherit" component={RouterLink} to="/compare-plans" sx={{ color: '#0070e0', textTransform: 'none' }}>
-              Compare plans
+             
             </Button>
             <Button color="inherit" component={RouterLink} to="/login" sx={{ color: '#0070e0', textTransform: 'none' }}>
-              Sign in
-            </Button>
-            <Button
-              variant="outlined"
-              sx={{
-                borderColor: '#0070e0',
-                color: '#0070e0',
-                textTransform: 'none',
-                '&:hover': {
-                  backgroundColor: 'rgba(0, 112, 224, 0.04)',
-                },
-              }}
-            >
-              Get Dropbox Basic
+           
             </Button>
           </Box>
         )}
