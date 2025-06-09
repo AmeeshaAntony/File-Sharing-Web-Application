@@ -547,6 +547,39 @@ def get_shared_files():
     
     return jsonify(result), 200
 
+@app.route('/api/shared-files/<token>', methods=['DELETE'])
+@jwt_required()
+def delete_shared_file(token):
+    user_id = get_jwt_identity()
+
+    try:
+        # Find the public share entry
+        share = PublicShare.query.filter_by(share_token=token).first()
+
+        if not share:
+            return jsonify({'error': 'Shared link not found'}), 404
+
+        # Verify that the user owns the file associated with the share link
+        file = File.query.get(share.file_id)
+        if not file or file.user_id != user_id:
+            return jsonify({'error': 'Unauthorized to delete this shared link'}), 403
+
+        # Delete associated file access records first
+        FileAccess.query.filter_by(share_token=token).delete()
+
+        # Delete the public share entry
+        db.session.delete(share)
+        db.session.commit()
+
+        return jsonify({'message': 'Shared link deleted successfully'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting shared file: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

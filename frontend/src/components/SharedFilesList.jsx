@@ -25,6 +25,7 @@ function SharedFilesList() {
   const [sharedFiles, setSharedFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     fetchSharedFiles();
@@ -88,6 +89,11 @@ function SharedFilesList() {
         <Typography variant="h4" component="h1" gutterBottom>
           Shared Files
         </Typography>
+        {success && (
+          <Typography color="success" sx={{ mb: 2 }}>
+            {success}
+          </Typography>
+        )}
         {sharedFiles.length === 0 ? (
           <Typography>No files have been shared yet.</Typography>
         ) : (
