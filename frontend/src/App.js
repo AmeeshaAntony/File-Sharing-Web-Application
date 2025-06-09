@@ -12,6 +12,7 @@ import ResetPassword from './components/ResetPassword';
 import MyFiles from './components/MyFiles';
 import ShareFile from './components/ShareFile';
 import SharedFileView from './components/SharedFileView';
+import SharedFilesList from './components/SharedFilesList';
 
 const theme = createTheme({
   palette: {
@@ -53,6 +54,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <MyFiles />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/shared-files"
+              element={
+                <PrivateRoute>
+                  <SharedFilesList />
                 </PrivateRoute>
               }
             />

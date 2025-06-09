@@ -9,9 +9,19 @@ from datetime import timedelta, datetime
 from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
 import secrets # Import secrets module
+import pytz
 
 app = Flask(__name__)
-CORS(app)
+
+# Enable CORS for all routes
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "supports_credentials": True
+    }
+})
 
 # Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///fileshare.db'
@@ -21,6 +31,7 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['PROFILE_PHOTOS_FOLDER'] = 'profile_photos'
 app.config['SECRET_KEY'] = 'b7b6e0135582657a393275bc2d77dee6cb56462af64082da0eb68b09acd275dc' # Add a secret key for token generation
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Email Configuration (UPDATE WITH YOUR EMAIL DETAILS)
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
@@ -93,9 +104,19 @@ class PublicShare(db.Model):
     recipient_email = db.Column(db.String(120), nullable=False)
     message = db.Column(db.Text)
     expiration_time = db.Column(db.Integer, nullable=False)  # in hours
-    created_at = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp())
-    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
     file = db.relationship('File', backref='public_shares')
+
+    def __init__(self, **kwargs):
+        super(PublicShare, self).__init__(**kwargs)
+        # No need for manual localization here if column is timezone=True
+
+class FileAccess(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    file_id = db.Column(db.Integer, db.ForeignKey('file.id'), nullable=False)
+    share_token = db.Column(db.String(64), nullable=False)
+    access_time = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
 
 # Routes
 @app.route('/api/register', methods=['POST'])
@@ -339,56 +360,60 @@ def share_file():
     # Check if file already has a public share
     existing_share = PublicShare.query.filter_by(file_id=file.id).first()
     
-    if existing_share:
-        # If share exists, use the existing share link
-        share_link = f"http://localhost:3000/shared/{existing_share.share_token}"
-        
-        # Send email with existing share link
-        try:
-            msg = Message(
-                'File Shared With You',
-                recipients=[data['email']]
-            )
-            msg.body = f"""
-            A file has been shared with you.
-
-            File: {file.original_filename}
-            Message: {data.get('message', '')}
-            
-            You can access the file using this link: {share_link}
-            
-            This link will expire in {existing_share.expiration_time} hours.
-            """
-            mail.send(msg)
-        except Exception as e:
-            print(f"Error sending email: {e}")
-            # Don't return error to user, just log it
-        
-        return jsonify({
-            'message': 'File shared successfully with new recipient',
-            'share_link': share_link
-        }), 200
-
-    # If no existing share, create a new one
-    share_token = secrets.token_urlsafe(32)
+    # Get expiration_hours from the current request
     expiration_hours = int(data.get('expiration_time', 24))
-    expires_at = datetime.utcnow() + timedelta(hours=expiration_hours)
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist)
 
-    public_share = PublicShare(
-        file_id=file.id,
-        share_token=share_token,
-        recipient_email=data['email'],
-        message=data.get('message', ''),
-        expiration_time=expiration_hours,
-        expires_at=expires_at
-    )
-    
-    db.session.add(public_share)
-    db.session.commit()
+    # Calculate new expires_at based on current request's expiration_hours
+    if expiration_hours == 1:
+        expires_at_new = current_time + timedelta(hours=1)
+    else:
+        days = 0
+        if expiration_hours == 24:
+            days = 1
+        elif expiration_hours == 72:
+            days = 3
+        elif expiration_hours == 168:
+            days = 7
+        elif expiration_hours == 720:
+            days = 30
+        else:
+            # Fallback for unexpected values, treat as days
+            days = expiration_hours // 24
 
-    share_link = f"http://localhost:3000/shared/{share_token}"
+        # Set expiration to end of the day (23:59:59) of the target day
+        expires_at_new = (current_time + timedelta(days=days)).replace(hour=23, minute=59, second=59)
+
+    # expires_at_new is already timezone-aware because current_time is.
+    # SQLAlchemy will handle UTC conversion when saving to DateTime(timezone=True)
+
+    if existing_share:
+        # If share exists, update its expiration and reuse the link
+        existing_share.expiration_time = expiration_hours
+        existing_share.expires_at = expires_at_new  # Save timezone-aware datetime
+        db.session.commit()
+
+        share_link = f"http://localhost:3000/shared/{existing_share.share_token}"
+        expires_at_for_email = existing_share.expires_at.astimezone(ist) # Convert back to IST for email
+    else:
+        # If no existing share, create a new one
+        share_token = secrets.token_urlsafe(32)
+        public_share = PublicShare(
+            file_id=file.id,
+            share_token=share_token,
+            recipient_email=data['email'],
+            message=data.get('message', ''),
+            expiration_time=expiration_hours,
+            expires_at=expires_at_new  # Save timezone-aware datetime
+        )
+        db.session.add(public_share)
+        db.session.commit()
+
+        share_link = f"http://localhost:3000/shared/{share_token}"
+        expires_at_for_email = expires_at_new.astimezone(ist) # Convert to IST for email
     
-    # Send email with new share link
+    # Send email with new share link (or updated expiration)
     try:
         msg = Message(
             'File Shared With You',
@@ -402,7 +427,7 @@ def share_file():
         
         You can access the file using this link: {share_link}
         
-        This link will expire in {expiration_hours} hours.
+        This link will expire on {expires_at_for_email.strftime('%Y-%m-%d %H:%M:%S %Z')}
         """
         mail.send(msg)
     except Exception as e:
@@ -411,43 +436,116 @@ def share_file():
     
     return jsonify({
         'message': 'File shared successfully',
-        'share_link': share_link
+        'share_link': share_link,
+        'expires_at': expires_at_for_email.strftime('%Y-%m-%d %H:%M:%S %Z')
     }), 200
 
-@app.route('/api/shared/<token>', methods=['GET'])
+@app.route('/api/shared/<token>', methods=['GET', 'OPTIONS'])
 def get_shared_file(token):
-    share = PublicShare.query.filter_by(share_token=token).first()
-    
-    if not share:
-        return jsonify({'error': 'Share link not found'}), 404
-    
-    if share.expires_at < datetime.utcnow():
-        return jsonify({'error': 'Share link has expired'}), 410
-    
-    file = File.query.get(share.file_id)
-    if not file:
-        return jsonify({'error': 'File not found'}), 404
-    
-    # Check if the request wants JSON details or the actual file
-    if request.headers.get('Accept') == 'application/json':
-        return jsonify({
-            'filename': file.original_filename,
-            'size': file.file_size,
-            'message': share.message,
-            'expires_at': share.expires_at.isoformat()
-        }), 200
-    
-    # If not requesting JSON, serve the file for download
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    if not os.path.exists(file_path):
-        return jsonify({'error': 'File not found on server'}), 404
+    try:
+        if request.method == 'OPTIONS':
+            return '', 200
+            
+        share = PublicShare.query.filter_by(share_token=token).first()
+        if not share:
+            return jsonify({'error': 'Share link not found'}), 404
+        
+        # Current time in IST for comparison
+        ist = pytz.timezone('Asia/Kolkata')
+        current_time_ist = datetime.now(ist)
 
-    return send_from_directory(
-        app.config['UPLOAD_FOLDER'],
-        file.filename,
-        as_attachment=True,
-        download_name=file.original_filename
-    )
+        # share.expires_at is already timezone-aware (UTC) from DB, convert to IST for comparison
+        share_expires_at_ist = share.expires_at.astimezone(ist)
+        
+        if share_expires_at_ist < current_time_ist:
+            return jsonify({'error': 'Share link has expired'}), 410
+        
+        file = File.query.get(share.file_id)
+        if not file:
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Record file access
+        try:
+            file_access = FileAccess(
+                file_id=file.id,
+                share_token=token
+            )
+            db.session.add(file_access)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()  # Rollback on error
+            # Log but don't fail the request
+        
+        # Check if the request wants JSON details or the actual file
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({
+                'filename': file.original_filename,
+                'size': file.file_size,
+                'message': share.message,
+                'expires_at': share_expires_at_ist.strftime('%Y-%m-%d %H:%M:%S %Z') # Use IST for display
+            }), 200
+        
+        # If not requesting JSON, serve the file for download
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found on server'}), 404
+
+        return send_from_directory(
+            app.config['UPLOAD_FOLDER'],
+            file.filename,
+            as_attachment=True,
+            download_name=file.original_filename
+        )
+    except Exception as e:
+        print(f"Error in get_shared_file: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
+@app.route('/api/shared-files', methods=['GET'])
+@jwt_required()
+def get_shared_files():
+    user_id = get_jwt_identity()
+    ist = pytz.timezone('Asia/Kolkata')
+    
+    shared_files = db.session.query(
+        File, PublicShare
+    ).join(
+        PublicShare, File.id == PublicShare.file_id
+    ).filter(
+        File.user_id == user_id
+    ).order_by(
+        PublicShare.created_at.desc()  # Sort by creation date in descending order
+    ).all()
+    
+    result = []
+    for file, share in shared_files:
+        # Convert stored UTC-aware datetimes to IST for display
+        share_created_at_ist = share.created_at.astimezone(ist) if share.created_at.tzinfo else ist.localize(share.created_at)
+        share_expires_at_ist = share.expires_at.astimezone(ist) if share.expires_at.tzinfo else ist.localize(share.expires_at)
+
+        first_access = db.session.query(FileAccess).filter_by(
+            file_id=file.id,
+            share_token=share.share_token
+        ).order_by(FileAccess.access_time.asc()).first()
+        
+        first_access_time_ist = None
+        if first_access and first_access.access_time:
+            first_access_time_ist = first_access.access_time.astimezone(ist) if first_access.access_time.tzinfo else ist.localize(first_access.access_time)
+
+        result.append({
+            'file_id': file.id,
+            'filename': file.original_filename,
+            'share_date': share_created_at_ist.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'expires_at': share_expires_at_ist.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'share_token': share.share_token,
+            'recipient_email': share.recipient_email,
+            'message': share.message,
+            'is_accessed': first_access is not None,
+            'first_access_time': first_access_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z') if first_access_time_ist else None
+        })
+    
+    return jsonify(result), 200
 
 if __name__ == '__main__':
     with app.app_context():

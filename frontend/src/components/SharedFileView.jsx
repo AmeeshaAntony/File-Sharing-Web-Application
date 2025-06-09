@@ -19,28 +19,52 @@ function SharedFileView() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchFileDetails = async () => {
-      try {
-        const response = await axios.get(`http://localhost:5000/api/shared/${token}`, {
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-        setFileDetails(response.data);
-      } catch (error) {
-        console.error('Error fetching file details:', error);
-        setError(error.response?.data?.error || 'Error loading file details');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchFileDetails();
   }, [token]);
 
+  const fetchFileDetails = async () => {
+    try {
+      console.log('Fetching file details for token:', token); // Debug log
+      const response = await axios.get(`http://localhost:5000/api/shared/${token}`, {
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      console.log('File details response:', response.data); // Debug log
+      setFileDetails(response.data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching file details:', error);
+      console.error('Error response:', error.response?.data); // Debug log
+      
+      if (error.response?.status === 404) {
+        setError('Share link not found');
+      } else if (error.response?.status === 410) {
+        setError('Share link has expired');
+      } else if (error.response?.status === 500) {
+        const errorMessage = error.response?.data?.details || 'Server error. Please try again later.';
+        setError(`Server error: ${errorMessage}`);
+      } else {
+        setError('Error loading file details. Please try again later.');
+      }
+      setLoading(false);
+    }
+  };
+
   const handleDownload = () => {
-    // Open the download URL in a new tab
-    window.open(`http://localhost:5000/api/shared/${token}`, '_blank');
+    try {
+      // Create a temporary link element
+      const link = document.createElement('a');
+      link.href = `http://localhost:5000/api/shared/${token}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      setError('Error downloading file. Please try again.');
+    }
   };
 
   if (loading) {
@@ -97,7 +121,7 @@ function SharedFileView() {
           </Typography>
 
           <Typography variant="body2" color="text.secondary" gutterBottom>
-            Expires: {new Date(fileDetails?.expires_at).toLocaleString()}
+            Expires: {fileDetails?.expires_at}
           </Typography>
 
           <Box sx={{ mt: 3 }}>

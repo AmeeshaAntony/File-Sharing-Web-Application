@@ -54,6 +54,8 @@ function Dashboard() {
         </Button>
         <Button
           variant="outlined"
+          component={RouterLink}
+          to="/shared-files"
           sx={{
             borderColor: '#0070e0',
             color: '#0070e0',
