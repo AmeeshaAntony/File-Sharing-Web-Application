@@ -13,6 +13,8 @@ import MyFiles from './components/MyFiles';
 import ShareFile from './components/ShareFile';
 import SharedFileView from './components/SharedFileView';
 import SharedFilesList from './components/SharedFilesList';
+import ChangePassword from './components/ChangePassword';
+import EditProfile from './components/EditProfile';
 
 const theme = createTheme({
   palette: {
@@ -76,6 +78,22 @@ function App() {
             <Route path="/shared/:token" element={<SharedFileView />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
+            <Route
+              path="/change-password"
+              element={
+                <PrivateRoute>
+                  <ChangePassword />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/edit-profile"
+              element={
+                <PrivateRoute>
+                  <EditProfile />
+                </PrivateRoute>
+              }
+            />
           </Routes>
         </Router>
       </AuthProvider>
@@ -84,3 +102,4 @@ function App() {
 }
 
 export default App;
+

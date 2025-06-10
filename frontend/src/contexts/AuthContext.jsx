@@ -11,14 +11,29 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [accessToken, setAccessToken] = useState(null);
 
+  const fetchUserData = async (token) => {
+    try {
+      const response = await axios.get('http://localhost:5000/api/user', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      setUser(response.data);
+      setIsAuthenticated(true);
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      localStorage.removeItem('token');
+      setUser(null);
+      setIsAuthenticated(false);
+    }
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setAccessToken(token);
-      // You might want to verify the token with your backend here
-      setIsAuthenticated(true);
-      // You might want to fetch user data here
+      fetchUserData(token);
     }
     setLoading(false);
   }, []);
@@ -38,7 +53,19 @@ export const AuthProvider = ({ children }) => {
       return true;
     } catch (error) {
       console.error('Login error:', error);
-      return false;
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        const errorMessage = error.response.data?.error || 'Invalid credentials';
+        console.log('Server error response:', error.response.data);
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        // The request was made but no response was received
+        throw new Error('No response from server. Please check your connection.');
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        throw new Error('An error occurred while setting up the request.');
+      }
     }
   };
 
@@ -66,6 +93,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    setUser,
     isAuthenticated,
     loading,
     login,

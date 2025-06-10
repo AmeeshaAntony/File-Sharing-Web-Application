@@ -33,7 +33,27 @@ function Navbar() {
             <Typography variant="body1" sx={{ color: '#333' }}>
               Welcome, {user.first_name}!
             </Typography>
-            <Button color="inherit" onClick={handleLogout} sx={{ color: '#0070e0', textTransform: 'none' }}>
+            <Button 
+              color="inherit" 
+              component={RouterLink}
+              to="/edit-profile"
+              sx={{ color: '#0070e0', textTransform: 'none' }}
+            >
+              Edit Profile
+            </Button>
+            <Button 
+              color="inherit" 
+              component={RouterLink}
+              to="/change-password"
+              sx={{ color: '#0070e0', textTransform: 'none' }}
+            >
+              Change Password
+            </Button>
+            <Button 
+              color="inherit" 
+              onClick={handleLogout} 
+              sx={{ color: '#0070e0', textTransform: 'none' }}
+            >
               Logout
             </Button>
           </Box>

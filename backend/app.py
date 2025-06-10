@@ -159,23 +159,46 @@ def register():
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    user = User.query.filter_by(email=data['email']).first()
-    
-    if user and check_password_hash(user.password_hash, data['password']):
-        access_token = create_access_token(identity=user.id)
-        return jsonify({
-            'access_token': access_token,
-            'user': {
-                'id': user.id,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'email': user.email,
-                'profile_photo': user.profile_photo
-            }
-        }), 200
-    
-    return jsonify({'error': 'Invalid credentials'}), 401
+    try:
+        data = request.get_json()
+        if not data or 'email' not in data or 'password' not in data:
+            return jsonify({'error': 'Email and password are required'}), 400
+            
+        print("Login attempt for email:", data.get('email'))
+        print("Received password:", data.get('password'))
+        
+        user = User.query.filter_by(email=data['email']).first()
+        if not user:
+            print("User not found")
+            return jsonify({'error': 'No account found with this email'}), 401
+        
+        print("User found with ID:", user.id)
+        print("Stored password hash:", user.password_hash)
+        print("Checking password...")
+        
+        is_password_correct = check_password_hash(user.password_hash, data['password'])
+        print("Password check result:", is_password_correct)
+        
+        if is_password_correct:
+            print("Password correct, generating token")
+            access_token = create_access_token(identity=user.id)
+            return jsonify({
+                'access_token': access_token,
+                'user': {
+                    'id': user.id,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'email': user.email,
+                    'profile_photo': user.profile_photo
+                }
+            }), 200
+        
+        print("Password incorrect")
+        return jsonify({'error': 'Incorrect password'}), 401
+        
+    except Exception as e:
+        print("Login error:", str(e))
+        return jsonify({'error': 'An error occurred during login'}), 500
 
 @app.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
@@ -579,6 +602,186 @@ def delete_shared_file(token):
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
+@app.route('/api/test-user', methods=['POST'])
+def create_test_user():
+    try:
+        # Check if test user already exists
+        test_email = 'test@example.com'
+        if User.query.filter_by(email=test_email).first():
+            return jsonify({'message': 'Test user already exists'}), 200
+
+        # Create test user
+        user = User(
+            first_name='Test',
+            last_name='User',
+            email=test_email,
+            password_hash=generate_password_hash('test123'),
+            date_of_birth=datetime.now().date(),
+            phone_number='1234567890'
+        )
+        
+        db.session.add(user)
+        db.session.commit()
+        
+        return jsonify({'message': 'Test user created successfully'}), 201
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/check-user/<email>', methods=['GET'])
+def check_user(email):
+    try:
+        user = User.query.filter_by(email=email).first()
+        if user:
+            return jsonify({
+                'exists': True,
+                'id': user.id,
+                'email': user.email,
+                'password_hash': user.password_hash,
+                'first_name': user.first_name,
+                'last_name': user.last_name
+            }), 200
+        return jsonify({'exists': False}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    try:
+        data = request.get_json()
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        
+        if not current_password or not new_password:
+            return jsonify({'error': 'Current password and new password are required'}), 400
+            
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        if not check_password_hash(user.password_hash, current_password):
+            return jsonify({'error': 'Current password is incorrect'}), 401
+            
+        user.password_hash = generate_password_hash(new_password)
+        db.session.commit()
+        
+        return jsonify({'message': 'Password changed successfully'}), 200
+        
+    except Exception as e:
+        print("Change password error:", str(e))
+        return jsonify({'error': 'An error occurred while changing password'}), 500
+
+@app.route('/api/verify-password', methods=['POST'])
+@jwt_required()
+def verify_password():
+    try:
+        data = request.get_json()
+        current_password = data.get('current_password')
+        
+        if not current_password:
+            return jsonify({'error': 'Current password is required'}), 400
+            
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        if not check_password_hash(user.password_hash, current_password):
+            return jsonify({'error': 'Current password is incorrect'}), 401
+            
+        return jsonify({'message': 'Password verified successfully'}), 200
+        
+    except Exception as e:
+        print("Verify password error:", str(e))
+        return jsonify({'error': 'An error occurred while verifying password'}), 500
+
+@app.route('/api/user', methods=['GET'])
+@jwt_required()
+def get_user_profile():
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        return jsonify({
+            'id': user.id,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'email': user.email,
+            'date_of_birth': user.date_of_birth.isoformat(),
+            'phone_number': user.phone_number,
+            'profile_photo': user.profile_photo
+        }), 200
+        
+    except Exception as e:
+        print("Get user profile error:", str(e))
+        return jsonify({'error': 'An error occurred while fetching user profile'}), 500
+
+@app.route('/api/user', methods=['PUT'])
+@jwt_required()
+def update_user_profile():
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        # Update basic info
+        user.first_name = request.form.get('first_name', user.first_name)
+        user.last_name = request.form.get('last_name', user.last_name)
+        user.email = request.form.get('email', user.email)
+        user.phone_number = request.form.get('phone_number', user.phone_number)
+        
+        # Update date of birth if provided
+        if 'date_of_birth' in request.form:
+            user.date_of_birth = datetime.strptime(request.form['date_of_birth'], '%Y-%m-%d').date()
+
+        # Handle profile photo upload
+        if 'profile_photo' in request.files:
+            photo = request.files['profile_photo']
+            if photo.filename != '':
+                # Delete old profile photo if exists
+                if user.profile_photo:
+                    old_photo_path = os.path.join(app.config['PROFILE_PHOTOS_FOLDER'], user.profile_photo)
+                    if os.path.exists(old_photo_path):
+                        os.remove(old_photo_path)
+
+                # Save new profile photo
+                filename = secure_filename(photo.filename)
+                photo_path = os.path.join(app.config['PROFILE_PHOTOS_FOLDER'], filename)
+                photo.save(photo_path)
+                user.profile_photo = filename
+
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Profile updated successfully',
+            'user': {
+                'id': user.id,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'email': user.email,
+                'date_of_birth': user.date_of_birth.isoformat(),
+                'phone_number': user.phone_number,
+                'profile_photo': user.profile_photo
+            }
+        }), 200
+        
+    except Exception as e:
+        print("Update profile error:", str(e))
+        return jsonify({'error': 'An error occurred while updating profile'}), 500
+
+@app.route('/profile_photos/<filename>')
+def serve_profile_photo(filename):
+    return send_from_directory(app.config['PROFILE_PHOTOS_FOLDER'], filename)
 
 if __name__ == '__main__':
     with app.app_context():

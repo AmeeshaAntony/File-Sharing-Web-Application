@@ -13,19 +13,23 @@ import {
   Chip,
   IconButton,
   Tooltip,
+  Button,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Download as DownloadIcon,
+  Home as HomeIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 function SharedFilesList() {
   const [sharedFiles, setSharedFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchSharedFiles();
@@ -149,6 +153,16 @@ function SharedFilesList() {
             </Table>
           </TableContainer>
         )}
+        <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
+          <Button
+            variant="contained"
+            startIcon={<HomeIcon />}
+            onClick={() => navigate('/')}
+            sx={{ minWidth: '200px' }}
+          >
+            Home
+          </Button>
+        </Box>
       </Box>
     </Container>
   );
