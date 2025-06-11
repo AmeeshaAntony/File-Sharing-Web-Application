@@ -4,10 +4,14 @@ import {
   Typography,
   Box,
   Button,
+  Avatar,
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 function Dashboard() {
+  const { user } = useAuth();
+
   return (
     <Box
       sx={{
@@ -25,6 +29,18 @@ function Dashboard() {
         backgroundRepeat: 'no-repeat',
       }}
     >
+      {user && (
+        <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Avatar
+            src={user.profile_photo ? `http://localhost:5000/profile_photos/${user.profile_photo}` : ''}
+            sx={{ width: 100, height: 100, mb: 2 }}
+          />
+          <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: '#333' }}>
+            Welcome, {user.first_name} {user.last_name}!
+          </Typography>
+        </Box>
+      )}
+
       <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: '#333' }}>
       Sharing made simple—just upload, 
         <br />
