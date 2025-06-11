@@ -198,7 +198,11 @@ const EditProfile = () => {
                 name="email"
                 type="email"
                 value={formData.email}
-                onChange={handleChange}
+                disabled={true}
+                InputProps={{
+                  readOnly: true,
+                }}
+                helperText="Email address cannot be changed"
               />
             </Grid>
 
@@ -235,6 +239,17 @@ const EditProfile = () => {
                 size="large"
               >
                 Update Profile
+              </Button>
+            </Grid>
+            <Grid item xs={12}>
+              <Button
+                fullWidth
+                variant="outlined"
+                onClick={() => navigate('/')}
+                disabled={loading}
+                sx={{ mt: 1 }}
+              >
+                Home
               </Button>
             </Grid>
           </Grid>

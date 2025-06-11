@@ -737,7 +737,6 @@ def update_user_profile():
         # Update basic info
         user.first_name = request.form.get('first_name', user.first_name)
         user.last_name = request.form.get('last_name', user.last_name)
-        user.email = request.form.get('email', user.email)
         user.phone_number = request.form.get('phone_number', user.phone_number)
         
         # Update date of birth if provided

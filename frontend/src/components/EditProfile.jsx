@@ -76,15 +76,18 @@ function EditProfile() {
 
     try {
       const formDataToSend = new FormData();
-      Object.keys(formData).forEach(key => {
-        formDataToSend.append(key, formData[key]);
-      });
+      // Only send fields that can be updated
+      formDataToSend.append('first_name', formData.first_name);
+      formDataToSend.append('last_name', formData.last_name);
+      formDataToSend.append('phone_number', formData.phone_number);
+      formDataToSend.append('date_of_birth', formData.date_of_birth);
+      
       if (profilePhoto) {
         formDataToSend.append('profile_photo', profilePhoto);
       }
 
       const response = await axios.put(
-        'http://localhost:5000/api/profile',
+        'http://localhost:5000/api/user',
         formDataToSend,
         {
           headers: {
@@ -183,8 +186,11 @@ function EditProfile() {
                   name="email"
                   type="email"
                   value={formData.email}
-                  onChange={handleChange}
-                  disabled={loading}
+                  disabled={true}
+                  InputProps={{
+                    readOnly: true,
+                  }}
+                  helperText="Email address cannot be changed"
                 />
               </Grid>
               <Grid item xs={12}>
@@ -230,6 +236,15 @@ function EditProfile() {
               disabled={loading}
             >
               Cancel
+            </Button>
+            <Button
+              fullWidth
+              variant="outlined"
+              onClick={() => navigate('/')}
+              disabled={loading}
+              sx={{ mt: 1 }}
+            >
+              Home
             </Button>
           </form>
         </Paper>

@@ -30,9 +30,6 @@ function Navbar() {
 
         {isAuthenticated && user ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="body1" sx={{ color: '#333' }}>
-              Welcome, {user.first_name}!
-            </Typography>
             <Button 
               color="inherit" 
               component={RouterLink}
@@ -57,16 +54,7 @@ function Navbar() {
               Logout
             </Button>
           </Box>
-        ) : (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Button color="inherit" component={RouterLink} to="/compare-plans" sx={{ color: '#0070e0', textTransform: 'none' }}>
-             
-            </Button>
-            <Button color="inherit" component={RouterLink} to="/login" sx={{ color: '#0070e0', textTransform: 'none' }}>
-           
-            </Button>
-          </Box>
-        )}
+        ) : null}
       </Toolbar>
     </AppBar>
   );
