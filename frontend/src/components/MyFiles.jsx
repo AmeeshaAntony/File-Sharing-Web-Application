@@ -251,8 +251,8 @@ function MyFiles() {
         <Typography variant="h4" component="h1" gutterBottom>
           Welcome, {user?.first_name}!
         </Typography>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-          <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexDirection: { xs: 'column', sm: 'row' }, gap: { xs: 2, sm: 0 } }}>
+          <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' }, justifyContent: { xs: 'center', sm: 'flex-start' } }}>
             <Button
               variant="contained"
               startIcon={<UploadIcon />}
@@ -273,6 +273,7 @@ function MyFiles() {
             variant="outlined"
             size="small"
             onChange={handleSearchChange}
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
           />
         </Box>
 
